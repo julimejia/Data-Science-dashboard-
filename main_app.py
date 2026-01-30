@@ -52,32 +52,58 @@ with tab2:
         st.warning("Se necesitan al menos 2 columnas numéricas para correlación.")
 
 with tab3:
-    st.subheader("Análisis de Variables Numéricas")
+    st.subheader("📈 Análisis Cuantitativo Avanzado")
     
     if numeric_cols:
-        col_x = st.selectbox("Selecciona Variable X (Eje horizontal)", numeric_cols, key="nx")
-        col_y = st.selectbox("Selecciona Variable Y (Eje vertical - Opcional)", ["None"] + numeric_cols, key="ny")
+        col_x = st.selectbox("Variable X", numeric_cols, key="nx")
+        col_y = st.selectbox("Variable Y (Comparativa)", ["Ninguna"] + numeric_cols, key="ny")
         
         c1, c2 = st.columns(2)
         
         with c1:
-            st.write(f"**Distribución de {col_x}**")
-            # Histograma con KDE (Densidad)
-            fig_hist = px.histogram(df, x=col_x, marginal="box", nbins=40, color_discrete_sequence=['#636EFA'])
+            # Histograma interactivo con selectores de densidad
+            st.write(f"**Distribución y Outliers de {col_x}**")
+            fig_hist = px.histogram(df, x=col_x, marginal="violin", # Cambiado a violín para más detalle
+                                   color_discrete_sequence=['#00CC96'],
+                                   nbins=50)
             st.plotly_chart(fig_hist, use_container_width=True)
             
         with c2:
-            st.write(f"**Boxplot de {col_x}**")
-            # Boxplot para detectar outliers
-            fig_box = px.box(df, y=col_x, points="all", color_discrete_sequence=['#EF553B'])
-            st.plotly_chart(fig_box, use_container_width=True)
+            st.write(f"**Análisis de Acumulación (ECDF)**")
+            # El ECDF ayuda a ver qué porcentaje de datos está por debajo de cierto valor
+            fig_ecdf = px.ecdf(df, x=col_x)
+            st.plotly_chart(fig_ecdf, use_container_width=True)
 
-        if col_y != "None":
+        if col_y != "Ninguna":
             st.write(f"**Relación entre {col_x} y {col_y}**")
-            fig_scatter = px.scatter(df, x=col_x, y=col_y, trendline="ols", hover_data=cat_cols[:2])
+            try:
+                # Intentamos graficar con línea de tendencia
+                fig_scatter = px.scatter(df, x=col_x, y=col_y, 
+                                       trendline="ols", 
+                                       hover_data=cat_cols[:2],
+                                       opacity=0.6)
+            except ImportError:
+                # Si falla statsmodels, graficamos sin tendencia
+                st.warning("⚠️ Instala 'statsmodels' para ver la línea de tendencia. Mostrando solo puntos.")
+                fig_scatter = px.scatter(df, x=col_x, y=col_y, 
+                                       hover_data=cat_cols[:2],
+                                       opacity=0.6)
+            
             st.plotly_chart(fig_scatter, use_container_width=True)
     else:
-        st.info("No hay columnas numéricas.")
+        st.info("No hay columnas numéricas para este análisis.")
+
+with tab2:
+    # Mejora visual de la matriz de correlación
+    st.write("### 🔥 Mapa de Calor de Relaciones")
+    if len(numeric_cols) > 1:
+        corr = df[numeric_cols].corr()
+        # Usamos un mapa de calor con escala de colores divergente (RdBu)
+        fig_corr = px.imshow(corr, 
+                            text_auto=".2f", # Muestra solo 2 decimales
+                            color_continuous_scale='RdBu_r', 
+                            zmin=-1, zmax=1) # Forzamos escala de -1 a 1
+        st.plotly_chart(fig_corr, use_container_width=True)
 
 with tab4:
     st.subheader("Análisis de Variables Categóricas")
