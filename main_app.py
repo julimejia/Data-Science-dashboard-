@@ -1,123 +1,111 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+import plotly.express as px
+import plotly.figure_factory as ff
 
-st.set_page_config(page_title="Simple EDA", layout="wide")
-st.title("📊 Simple EDA on a CSV (Streamlit)")
+st.set_page_config(page_title="Advanced EDA", layout="wide")
+st.title("🚀 EDA Interactivo Pro")
 
-# -----------------------
-# Upload CSV from user's PC
-# -----------------------
-st.sidebar.header("Load data")
-uploaded = st.sidebar.file_uploader("Upload a CSV from your PC", type=["csv"])
+# --- CARGA DE DATOS ---
+st.sidebar.header("1. Configuración de Datos")
+uploaded = st.sidebar.file_uploader("Sube tu archivo CSV", type=["csv"])
 
 if uploaded is None:
-    st.info("Upload a CSV file using the sidebar to start.")
+    st.info("👋 Por favor, sube un archivo CSV en la barra lateral para comenzar.")
     st.stop()
 
-# Optional: encoding handling (common for Latin CSVs)
-enc = st.sidebar.selectbox("Encoding", ["utf-8", "latin-1", "cp1252"], index=0)
+enc = st.sidebar.selectbox("Codificación (Encoding)", ["utf-8", "latin-1", "cp1252"])
 
 try:
     df = pd.read_csv(uploaded, encoding=enc)
 except Exception as e:
-    st.error(f"Could not read CSV. Try another encoding. Error: {e}")
+    st.error(f"Error al leer el archivo: {e}")
     st.stop()
 
-st.success(f"Loaded dataset with {df.shape[0]:,} rows and {df.shape[1]} columns.")
-
-# -----------------------
-# Sidebar filters
-# -----------------------
-st.sidebar.header("Filters")
-
+# --- PREPARACIÓN DE COLUMNAS ---
 numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
 cat_cols = df.select_dtypes(exclude=[np.number]).columns.tolist()
 
-if cat_cols:
-    cat_filter_col = st.sidebar.selectbox(
-        "Filter by a categorical column (optional)",
-        ["(none)"] + cat_cols
-    )
-    if cat_filter_col != "(none)":
-        options = df[cat_filter_col].dropna().unique().tolist()
-        selected = st.sidebar.multiselect(
-            f"Values for {cat_filter_col}",
-            options,
-            default=options[: min(5, len(options))]
-        )
-        if selected:
-            df = df[df[cat_filter_col].isin(selected)]
-
-# -----------------------
-# Main tabs
-# -----------------------
-tab1, tab2, tab3 = st.tabs(["Preview", "Summary", "Plots"])
+# --- TABS PRINCIPALES ---
+tab1, tab2, tab3, tab4 = st.tabs(["📋 Vista Previa", "📊 Estadísticas", "📈 Análisis Cuantitativo", "🎭 Análisis Cualitativo"])
 
 with tab1:
-    st.subheader("Data preview")
-    st.dataframe(df.head(50), use_container_width=True)
+    st.subheader("Exploración de Datos Crudos")
+    st.dataframe(df, use_container_width=True)
 
 with tab2:
-    st.subheader("Basic summary")
+    st.subheader("Resumen General")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Filas", df.shape[0])
+    col2.metric("Columnas", df.shape[1])
+    col3.metric("Numéricas", len(numeric_cols))
+    col4.metric("Categóricas", len(cat_cols))
 
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.metric("Rows", f"{df.shape[0]:,}")
-    with c2:
-        st.metric("Columns", f"{df.shape[1]:,}")
-    with c3:
-        st.metric("Missing cells", f"{int(df.isna().sum().sum()):,}")
-
-    st.write("*Missing values per column*")
-    missing = df.isna().sum().sort_values(ascending=False)
-    st.dataframe(missing.to_frame("missing_count"), use_container_width=True)
-
-    st.write("*Describe (numeric)*")
-    if numeric_cols:
-        st.dataframe(df[numeric_cols].describe().T, use_container_width=True)
+    st.markdown("---")
+    st.write("### Matriz de Correlación (Heatmap)")
+    if len(numeric_cols) > 1:
+        corr = df[numeric_cols].corr()
+        fig_corr = px.imshow(corr, text_auto=True, color_continuous_scale='RdBu_r', aspect="auto")
+        st.plotly_chart(fig_corr, use_container_width=True)
     else:
-        st.info("No numeric columns detected.")
-
-    st.write("*Top categories (first 5 categorical columns)*")
-    for col in cat_cols[:5]:
-        st.write(f"*{col}*")
-        st.dataframe(df[col].value_counts(dropna=False).head(10).to_frame("count"),
-                     use_container_width=True)
+        st.warning("Se necesitan al menos 2 columnas numéricas para correlación.")
 
 with tab3:
-    st.subheader("Quick plots")
-
+    st.subheader("Análisis de Variables Numéricas")
+    
     if numeric_cols:
-        col = st.selectbox("Choose a numeric column for histogram", numeric_cols)
-        bins = st.slider("Bins", 10, 80, 30)
+        col_x = st.selectbox("Selecciona Variable X (Eje horizontal)", numeric_cols, key="nx")
+        col_y = st.selectbox("Selecciona Variable Y (Eje vertical - Opcional)", ["None"] + numeric_cols, key="ny")
+        
+        c1, c2 = st.columns(2)
+        
+        with c1:
+            st.write(f"**Distribución de {col_x}**")
+            # Histograma con KDE (Densidad)
+            fig_hist = px.histogram(df, x=col_x, marginal="box", nbins=40, color_discrete_sequence=['#636EFA'])
+            st.plotly_chart(fig_hist, use_container_width=True)
+            
+        with c2:
+            st.write(f"**Boxplot de {col_x}**")
+            # Boxplot para detectar outliers
+            fig_box = px.box(df, y=col_x, points="all", color_discrete_sequence=['#EF553B'])
+            st.plotly_chart(fig_box, use_container_width=True)
 
-        fig, ax = plt.subplots()
-        ax.hist(df[col].dropna(), bins=bins)
-        ax.set_title(f"Histogram: {col}")
-        ax.set_xlabel(col)
-        ax.set_ylabel("Frequency")
-        st.pyplot(fig)
+        if col_y != "None":
+            st.write(f"**Relación entre {col_x} y {col_y}**")
+            fig_scatter = px.scatter(df, x=col_x, y=col_y, trendline="ols", hover_data=cat_cols[:2])
+            st.plotly_chart(fig_scatter, use_container_width=True)
+    else:
+        st.info("No hay columnas numéricas.")
+
+with tab4:
+    st.subheader("Análisis de Variables Categóricas")
+    
+    if cat_cols:
+        cat_to_plot = st.selectbox("Selecciona una categoría para analizar", cat_cols)
+        
+        c1, c2 = st.columns([1, 2])
+        
+        with c1:
+            # Tabla de frecuencias
+            counts = df[cat_to_plot].value_counts().reset_index()
+            counts.columns = [cat_to_plot, 'conteo']
+            st.write(f"**Frecuencias de {cat_to_plot}**")
+            st.dataframe(counts, use_container_width=True)
+            
+        with c2:
+            # Gráfico de Treemap (mejor que un Pie chart para muchas categorías)
+            st.write(f"**Jerarquía / Proporción de {cat_to_plot}**")
+            fig_tree = px.treemap(counts, path=[cat_to_plot], values='conteo', color='conteo',
+                                  color_continuous_scale='Viridis')
+            st.plotly_chart(fig_tree, use_container_width=True)
 
         st.markdown("---")
-        st.write("*Correlation heatmap (numeric columns)*")
-
-        # Recompute numeric_cols after filtering (just in case)
-        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-
-        if len(numeric_cols) >= 2:
-            corr = df[numeric_cols].corr(numeric_only=True)
-
-            fig2, ax2 = plt.subplots(figsize=(8, 6))
-            im = ax2.imshow(corr.values)
-            ax2.set_xticks(range(len(corr.columns)))
-            ax2.set_yticks(range(len(corr.columns)))
-            ax2.set_xticklabels(corr.columns, rotation=90)
-            ax2.set_yticklabels(corr.columns)
-            fig2.colorbar(im, ax=ax2, fraction=0.046, pad=0.04)
-            st.pyplot(fig2)
-        else:
-            st.info("Need at least 2 numeric columns for a correlation heatmap.")
+        # Comparativa cualitativa vs cuantitativa
+        if numeric_cols:
+            st.write(f"**Distribución de {numeric_cols[0]} por {cat_to_plot}**")
+            fig_violin = px.violin(df, y=numeric_cols[0], x=cat_to_plot, color=cat_to_plot, box=True, points="all")
+            st.plotly_chart(fig_violin, use_container_width=True)
     else:
-        st.info("No numeric columns detected, so plots are limited.")
+        st.info("No hay columnas categóricas.")
