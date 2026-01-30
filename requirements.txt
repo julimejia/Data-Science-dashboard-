@@ -1,1 +1,7 @@
-ÿþ
+streamlit
+pandas
+numpy
+plotly
+matplotlib
+scipy
+seaborn
