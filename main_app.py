@@ -2,143 +2,105 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+from groq import Groq # Necesitas instalar: pip install groq
 
-# Configuración de página con tema profesional
-st.set_page_config(page_title="Enterprise Analytics", layout="wide")
+# Configuración profesional
+st.set_page_config(page_title="Enterprise AI Dashboard", layout="wide")
 
-# --- ESTILOS PARA EVITAR PANTALLA EN BLANCO ---
-st.markdown("""
-    <style>
-    .reportview-container { background: #f0f2f6; }
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px; border-radius: 4px 4px 0px 0px; padding: 10px 20px;
-        background-color: #f8f9fa;
-    }
-    </style>
-""", unsafe_allow_html=True)
+# --- LÓGICA DE IA (Groq) ---
+def analizar_con_ia(api_key, context_data, user_question):
+    try:
+        client = Groq(api_key=api_key)
+        # Creamos un prompt con el contexto de los datos
+        prompt = f"""
+        Actúa como un experto Analista de Datos senior. 
+        Aquí tienes un resumen de los datos cargados:
+        {context_data}
+        
+        Pregunta del usuario: {user_question}
+        
+        Por favor, sé conciso, profesional y da insights basados solo en la estructura y estadísticas enviadas.
+        """
+        
+        completion = client.chat.completions.create(
+            model="llama3-70b-8192",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.5,
+        )
+        return completion.choices[0].message.content
+    except Exception as e:
+        return f"Error con la IA: {str(e)}"
 
-st.title("🏛️ Intelligence Dashboard Pro")
-
-# --- CARGA Y LIMPIEZA DE DATOS ---
+# --- SIDEBAR: CONFIGURACIÓN Y API ---
 with st.sidebar:
-    st.header("📂 Configuración")
+    st.header("🔑 Configuración")
     uploaded = st.file_uploader("Subir CSV", type=["csv"])
+    
+    st.divider()
+    st.subheader("🤖 Configuración IA")
+    groq_api_key = st.text_input("Introduce tu Groq API Key", type="password")
+    st.info("Consigue tu llave en: console.groq.com")
+
     if not uploaded:
-        st.info("Sube un archivo para comenzar")
         st.stop()
+
+# --- CARGA Y PROCESAMIENTO ---
+df = pd.read_csv(uploaded)
+df.columns = [str(c).replace(' ', '_') for c in df.columns]
+df_sample = df.head(2000)
+
+num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+cat_cols = df.select_dtypes(exclude=[np.number]).columns.tolist()
+
+# --- DASHBOARD PRINCIPAL ---
+tabs = st.tabs(["📊 Cuantitativo", "🎭 Cualitativo", "🛠️ Explorador", "🤖 Consultoría IA"])
+
+# (Las tabs anteriores se mantienen simplificadas...)
+
+with tabs[0]:
+    st.subheader("Análisis de Números")
+    sel_num = st.selectbox("Variable numérica", num_cols)
+    fig = px.histogram(df_sample, x=sel_num, marginal="box", color_discrete_sequence=['#00D4FF'])
+    st.plotly_chart(fig, use_container_width=True)
     
-    # Manejo de Encoding y Carga
-    enc = st.selectbox("Codificación", ["utf-8", "latin-1", "cp1252"])
-    df = pd.read_csv(uploaded, encoding=enc)
-    
-    # Limpieza de duplicados y nulos básicos
-    df.columns = [str(c).replace(' ', '_') for c in df.columns]
-    if df.columns.duplicated().any():
-        df.columns = [f"{c}_{i}" if d else c for i, (c, d) in enumerate(zip(df.columns, df.columns.duplicated()))]
-    
-    # Muestreo preventivo para evitar el bug visual de memoria
-    max_rows = st.slider("Filas para análisis rápido", 100, len(df), min(2000, len(df)))
-    df_sample = df.head(max_rows).copy()
 
-# Clasificación de columnas
-num_cols = df_sample.select_dtypes(include=[np.number]).columns.tolist()
-cat_cols = df_sample.select_dtypes(exclude=[np.number]).columns.tolist()
-
-# --- TABS: ORGANIZACIÓN POR OBJETIVOS ---
-t_preview, t_quant, t_qual, t_expert = st.tabs([
-    "📋 Vista Previa", 
-    "📈 Cuantitativo (Números)", 
-    "🎭 Cualitativo (Categorías)", 
-    "🛠️ Explorador Libre"
-])
-
-# 1. VISTA PREVIA
-with t_preview:
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Filas", len(df))
-    col2.metric("Columnas", len(df.columns))
-    col3.metric("Nulos", df.isna().sum().sum())
-    
-    st.dataframe(df_sample.head(50), use_container_width=True)
-
-# 2. ANÁLISIS CUANTITATIVO (Fijado y estable)
-with t_quant:
-    st.subheader("Análisis de Variables Numéricas")
-    if num_cols:
-        target_num = st.selectbox("Selecciona métrica principal", num_cols)
-        
-        c1, c2 = st.columns([2, 1])
-        with c1:
-            # Histograma con densidad
-            fig_dist = px.histogram(df_sample, x=target_num, marginal="box", 
-                                   title=f"Distribución de {target_num}",
-                                   color_discrete_sequence=['#0083B8'])
-            st.plotly_chart(fig_dist, use_container_width=True)
-            
-        
-        with c2:
-            st.write("**Estadísticas Clave**")
-            stats = df_sample[target_num].describe()
-            st.write(stats)
-            
-            # Scatter rápido contra índice
-            fig_index = px.scatter(df_sample, y=target_num, opacity=0.4, title="Dispersión por Índice")
-            st.plotly_chart(fig_index, use_container_width=True)
-    else:
-        st.warning("No se detectaron columnas numéricas.")
-
-# 3. ANÁLISIS CUALITATIVO (Fijado y estable)
-with t_qual:
+with tabs[1]:
     st.subheader("Análisis de Categorías")
-    if cat_cols:
-        target_cat = st.selectbox("Selecciona categoría", cat_cols)
-        
-        c1, c2 = st.columns(2)
-        with c1:
-            # Conteo de frecuencia
-            top_data = df_sample[target_cat].value_counts().nlargest(10).reset_index()
-            fig_bar = px.bar(top_data, x=target_cat, y='count', 
-                             title=f"Top 10: {target_cat}",
-                             color='count', color_continuous_scale='Blues')
-            st.plotly_chart(fig_bar, use_container_width=True)
-        
-        with c2:
-            # Composición porcentual
-            fig_pie = px.pie(top_data, names=target_cat, values='count', hole=0.4,
-                             title=f"Proporción de {target_cat}")
-            st.plotly_chart(fig_pie, use_container_width=True)
-            
+    sel_cat = st.selectbox("Variable categórica", cat_cols)
+    counts = df_sample[sel_cat].value_counts().nlargest(10).reset_index()
+    fig_cat = px.bar(counts, x=sel_cat, y='count', color='count')
+    st.plotly_chart(fig_cat, use_container_width=True)
+
+with tabs[2]:
+    st.subheader("Explorador de Datos")
+    st.dataframe(df_sample.describe(), use_container_width=True)
+
+# --- NUEVA TAB: CONSULTORÍA IA ---
+with tabs[3]:
+    st.subheader("Analista Virtual (Llama 3 via Groq)")
+    
+    if not groq_api_key:
+        st.warning("⚠️ Por favor, introduce tu API Key de Groq en la barra lateral para usar el analista.")
     else:
-        st.warning("No se detectaron columnas categóricas.")
-
-# 4. EXPLORADOR LIBRE (Simplificado para evitar bugs)
-with t_expert:
-    st.subheader("🛠️ Constructor de Reportes a Medida")
-    st.caption("Usa esta sección para cruzar variables libremente.")
-    
-    with st.expander("Configurar Gráfico Automático", expanded=True):
-        col_ex1, col_ex2, col_ex3 = st.columns(3)
-        with col_ex1:
-            x_ax = st.selectbox("Eje X", df_sample.columns)
-            y_ax = st.selectbox("Eje Y (Numérico)", num_cols)
-        with col_ex2:
-            tipo = st.radio("Formato", ["Barras", "Líneas", "Puntos"], horizontal=True)
-        with col_ex3:
-            dividir = st.selectbox("Agrupar por Color", ["Ninguno"] + cat_cols)
-
-    # Lógica simplificada
-    color_param = dividir if dividir != "Ninguno" else None
-    
-    if tipo == "Barras":
-        fig_custom = px.bar(df_sample, x=x_ax, y=y_ax, color=color_param, barmode="group")
-    elif tipo == "Líneas":
-        fig_custom = px.line(df_sample, x=x_ax, y=y_ax, color=color_param)
-    else:
-        fig_custom = px.scatter(df_sample, x=x_ax, y=y_ax, color=color_param, opacity=0.6)
-
-    st.plotly_chart(fig_custom, use_container_width=True)
-    
+        # Generar contexto para la IA
+        resumen_stats = {
+            "columnas": list(df.columns),
+            "tipos": df.dtypes.astype(str).to_dict(),
+            "estadisticas": df.describe().to_dict(),
+            "nulos": df.isna().sum().to_dict()
+        }
+        
+        user_query = st.text_area("¿Qué te gustaría saber sobre estos datos?", 
+                                 placeholder="Ej: Haz un resumen de las tendencias principales y posibles anomalías.")
+        
+        if st.button("🚀 Analizar con IA"):
+            with st.spinner("La IA está procesando tus datos..."):
+                respuesta = analizar_con_ia(groq_api_key, resumen_stats, user_query)
+                st.markdown("### 💡 Insights de la IA:")
+                st.write(respuesta)
+                
+                # Feedback visual
+                st.toast("Análisis completado", icon='✅')
 
 st.markdown("---")
-st.caption("Reporte generado dinámicamente | Enterprise Suite 2026")
+st.caption("Intelligence Dashboard v3.0 | Power by Groq & Plotly")
