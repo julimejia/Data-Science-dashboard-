@@ -3,118 +3,109 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 
-st.set_page_config(page_title="Advanced EDA Pro", layout="wide")
-st.title("🚀 Explorador de Datos Interactivo")
+st.set_page_config(page_title="Ultra Custom EDA", layout="wide")
+st.title("🛠️ Master Data Lab: Personalización Total")
 
 # --- CARGA Y LIMPIEZA ---
-st.sidebar.header("1. Configuración")
+st.sidebar.header("📂 Origen de Datos")
 uploaded = st.sidebar.file_uploader("Sube tu CSV", type=["csv"])
 
 if uploaded:
-    enc = st.sidebar.selectbox("Codificación", ["utf-8", "latin-1", "cp1252"])
-    df = pd.read_csv(uploaded, encoding=enc)
+    df = pd.read_csv(uploaded)
+    # Limpieza de columnas duplicadas
+    df.columns = [f"{c}_{i}" if d else c for i, (c, d) in enumerate(zip(df.columns, df.columns.duplicated()))]
     
-    # Limpieza de duplicados en columnas
-    if df.columns.duplicated().any():
-        df.columns = [f"{c}_{i}" if d else c for i, (c, d) in enumerate(zip(df.columns, df.columns.duplicated()))]
-
-    # --- FILTROS DE CONTROL DE DATOS ---
+    # --- BARRA LATERAL: CONFIGURACIÓN GLOBAL ---
     st.sidebar.markdown("---")
-    st.sidebar.header("2. Control de Visualización")
+    st.sidebar.header("🎨 Estética y Filtros")
     
-    # Slider para cantidad de datos
-    n_rows = st.sidebar.slider("Filas a visualizar", 
-                                min_value=min(10, len(df)), 
-                                max_value=len(df), 
-                                value=min(1000, len(df)))
-    df_sample = df.head(n_rows)
+    # Filtro de filas
+    max_rows = st.sidebar.number_input("Filas máximas a procesar", 10, len(df), 5000)
+    df_view = df.head(max_rows)
 
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    cat_cols = df.select_dtypes(exclude=[np.number]).columns.tolist()
+    # Buscador de texto global
+    search_term = st.sidebar.text_input("🔍 Buscar en los datos (Filtro rápido)")
+    if search_term:
+        df_view = df_view[df_view.apply(lambda row: row.astype(str).str.contains(search_term, case=False).any(), axis=1)]
 
-    # --- TABS ---
-    tab1, tab2, tab3 = st.tabs(["📊 Estadísticas", "📈 Análisis Numérico", "🎭 Análisis Categórico"])
+    # Selector de Tema
+    theme = st.sidebar.selectbox("Tema Visual", ["plotly_white", "plotly_dark", "ggplot2", "seaborn", "none"])
+    color_scale = st.sidebar.selectbox("Paleta de Colores", px.colors.named_colorscales())
 
-    with tab1:
-        st.subheader(f"Resumen de las primeras {n_rows} filas")
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Columnas Totales", df.shape[1])
-        col2.metric("Nulos Totales", df_sample.isna().sum().sum())
-        col3.metric("Memoria (MB)", round(df_sample.memory_usage().sum() / 1024**2, 2))
-        st.dataframe(df_sample.describe().T, use_container_width=True)
+    # --- PANEL DE CONTROL DE GRÁFICOS ---
+    st.header("📈 Creador de Visualizaciones Personalizadas")
+    
+    num_cols = df_view.select_dtypes(include=[np.number]).columns.tolist()
+    cat_cols = df_view.select_dtypes(exclude=[np.number]).columns.tolist()
+    all_cols = df_view.columns.tolist()
 
-    with tab2:
-        st.subheader("Análisis Cuantitativo Dinámico")
-        
-        # Opciones de control
-        c_alt1, c_alt2, c_alt3 = st.columns(3)
-        with c_alt1:
-            x_axis = st.selectbox("Eje X", numeric_cols, key="x_num")
-        with c_alt2:
-            y_axis = st.selectbox("Eje Y", numeric_cols, key="y_num")
-        with c_alt3:
-            z_axis = st.selectbox("Eje Z (Para 3D)", ["Ninguno"] + numeric_cols)
+    with st.expander("⚙️ Configuración del Gráfico", expanded=True):
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            chart_type = st.selectbox("Tipo de Gráfico", 
+                ["Dispersión (Scatter)", "Líneas", "Barras", "Área", "Histograma", "Caja (Box)", "Violín", "Embudo (Funnel)"])
+        with c2:
+            x_val = st.selectbox("Eje X (Categoría o Tiempo)", all_cols)
+        with c3:
+            y_val = st.selectbox("Eje Y (Valor)", num_cols)
+        with c4:
+            color_val = st.selectbox("Color por (Opcional)", ["Ninguno"] + all_cols)
 
-        # Checkboxes para personalizar el gráfico
-        st.write("**Opciones de gráfico:**")
-        col_check1, col_check2, col_check3 = st.columns(3)
-        show_trend = col_check1.checkbox("Mostrar línea de tendencia (OLS)")
-        show_marginal = col_check2.checkbox("Mostrar distribuciones marginales", value=True)
-        use_color = col_check3.checkbox("Colorear por categoría")
+    # --- SUBPLOTS Y DIMENSIONES ---
+    with st.expander("🧩 Subplots y Personalización Avanzada"):
+        cc1, cc2, cc3 = st.columns(3)
+        with cc1:
+            facet_col = st.selectbox("Dividir en Subplots (Columnas)", ["Ninguno"] + cat_cols)
+        with cc2:
+            log_y = st.checkbox("Escala Logarítmica en Y")
+        with cc3:
+            chart_height = st.slider("Altura del gráfico", 400, 1000, 600)
 
-        color_col = None
-        if use_color and cat_cols:
-            color_col = st.selectbox("Categoría para color", cat_cols)
+    # --- RENDERIZADO LÓGICO ---
+    color_arg = color_val if color_val != "Ninguno" else None
+    facet_arg = facet_col if facet_col != "Ninguno" else None
+    
+    fig = None
 
-        if z_axis == "Ninguno":
-            # Gráfico 2D
-            fig = px.scatter(df_sample, x=x_axis, y=y_axis, 
-                             color=color_col,
-                             trendline="ols" if show_trend else None,
-                             marginal_x="box" if show_marginal else None,
-                             marginal_y="violin" if show_marginal else None,
-                             template="plotly_white",
-                             title=f"Relación: {x_axis} vs {y_axis}")
-        else:
-            # Gráfico 3D
-            fig = px.scatter_3d(df_sample, x=x_axis, y=y_axis, z=z_axis,
-                                color=color_col,
-                                title=f"Análisis 3D: {x_axis}, {y_axis}, {z_axis}")
-        
+    if chart_type == "Dispersión (Scatter)":
+        fig = px.scatter(df_view, x=x_val, y=y_val, color=color_arg, facet_col=facet_arg, 
+                         template=theme, color_continuous_scale=color_scale, trendline="lowess" if len(df_view)<1000 else None)
+    
+    elif chart_type == "Líneas":
+        fig = px.line(df_view, x=x_val, y=y_val, color=color_arg, facet_col=facet_arg, template=theme)
+    
+    elif chart_type == "Barras":
+        fig = px.bar(df_view, x=x_val, y=y_val, color=color_arg, facet_col=facet_arg, template=theme, barmode="group")
+    
+    elif chart_type == "Área":
+        fig = px.area(df_view, x=x_val, y=y_val, color=color_arg, facet_col=facet_arg, template=theme)
+    
+    elif chart_type == "Histograma":
+        fig = px.histogram(df_view, x=x_val, color=color_arg, facet_col=facet_arg, template=theme, marginal="rug")
+    
+    elif chart_type == "Caja (Box)":
+        fig = px.box(df_view, x=x_val, y=y_val, color=color_arg, facet_col=facet_arg, template=theme, points="all")
+    
+    elif chart_type == "Violín":
+        fig = px.violin(df_view, x=x_val, y=y_val, color=color_arg, facet_col=facet_arg, template=theme, box=True, points="all")
+    
+    elif chart_type == "Embudo (Funnel)":
+        fig = px.funnel(df_view, x=y_val, y=x_val, color=color_arg, template=theme)
+
+    if fig:
+        fig.update_layout(height=chart_height)
+        if log_y: fig.update_yaxes(type="log")
         st.plotly_chart(fig, use_container_width=True)
 
-    with tab3:
-        st.subheader("Análisis Cualitativo e Impacto")
-        if cat_cols:
-            selected_cat = st.selectbox("Selecciona Categoría", cat_cols)
-            limit_cats = st.slider("Máximo de categorías a mostrar", 5, 50, 15)
-            
-            # Preparar datos
-            cat_counts = df_sample[selected_cat].value_counts().nlargest(limit_cats).reset_index()
-            
-            col_l, col_r = st.columns(2)
-            
-            with col_l:
-                # Gráfico de barras interactivo
-                fig_bar = px.bar(cat_counts, x=selected_cat, y='count', 
-                                 color='count', color_continuous_scale='Viridis',
-                                 title=f"Top {limit_cats} de {selected_cat}")
-                st.plotly_chart(fig_bar, use_container_width=True)
-            
-            with col_r:
-                # Gráfico circular tipo Donut
-                fig_pie = px.pie(cat_counts, names=selected_cat, values='count', 
-                                 hole=0.4, title="Distribución porcentual")
-                st.plotly_chart(fig_pie, use_container_width=True)
-                
-            # Bonus: Boxplot condicionado
-            st.markdown("---")
-            st.write(f"### ¿Cómo afecta '{selected_cat}' a las variables numéricas?")
-            num_target = st.selectbox("Elige variable numérica para comparar", numeric_cols)
-            fig_facet = px.box(df_sample, x=selected_cat, y=num_target, color=selected_cat)
-            st.plotly_chart(fig_facet, use_container_width=True)
-        else:
-            st.info("No hay columnas categóricas.")
+    # --- TABLA DE DATOS FILTRADOS ---
+    st.markdown("---")
+    st.subheader("📋 Datos Seleccionados")
+    st.write(f"Mostrando {len(df_view)} filas filtradas.")
+    st.dataframe(df_view, use_container_width=True)
+
+    # Botón de descarga
+    csv = df_view.to_csv(index=False).encode('utf-8')
+    st.download_button("📥 Descargar este subset como CSV", data=csv, file_name="subset_data.csv", mime="text/csv")
 
 else:
-    st.info("💡 Sube un archivo para desbloquear los gráficos dinámicos.")
+    st.warning("👈 Por favor, sube un archivo CSV para empezar a crear.")
