@@ -12,15 +12,25 @@ st.sidebar.header("1. Configuración de Datos")
 uploaded = st.sidebar.file_uploader("Sube tu archivo CSV", type=["csv"])
 
 if uploaded is None:
-    st.info("👋 Por favor, sube un archivo CSV en la barra lateral para comenzar.")
+    st.info("👋 Sube un CSV para comenzar.")
     st.stop()
 
-enc = st.sidebar.selectbox("Codificación (Encoding)", ["utf-8", "latin-1", "cp1252"])
+enc = st.sidebar.selectbox("Codificación", ["utf-8", "latin-1", "cp1252"])
 
 try:
     df = pd.read_csv(uploaded, encoding=enc)
+    
+    # 🔥 SOLUCIÓN AL ERROR: Renombrar columnas duplicadas
+    if df.columns.duplicated().any():
+        st.warning("⚠️ Se detectaron nombres de columnas duplicados. Se han renombrado automáticamente.")
+        cols = pd.Series(df.columns)
+        for i, col in enumerate(df.columns):
+            if cols.duplicated()[i]:
+                cols[i] = f"{col}_{i}"
+        df.columns = cols
+
 except Exception as e:
-    st.error(f"Error al leer el archivo: {e}")
+    st.error(f"Error: {e}")
     st.stop()
 
 # --- PREPARACIÓN DE COLUMNAS ---
@@ -52,86 +62,50 @@ with tab2:
         st.warning("Se necesitan al menos 2 columnas numéricas para correlación.")
 
 with tab3:
-    st.subheader("📈 Análisis Cuantitativo Avanzado")
-    
+    st.subheader("📈 Análisis Cuantitativo")
     if numeric_cols:
-        col_x = st.selectbox("Variable X", numeric_cols, key="nx")
-        col_y = st.selectbox("Variable Y (Comparativa)", ["Ninguna"] + numeric_cols, key="ny")
+        col_x = st.selectbox("Eje X (Principal)", numeric_cols)
+        col_y = st.selectbox("Eje Y (Para Relaciones)", ["Ninguno"] + numeric_cols)
         
         c1, c2 = st.columns(2)
-        
         with c1:
-            # Histograma interactivo con selectores de densidad
-            st.write(f"**Distribución y Outliers de {col_x}**")
-            fig_hist = px.histogram(df, x=col_x, marginal="violin", # Cambiado a violín para más detalle
-                                   color_discrete_sequence=['#00CC96'],
-                                   nbins=50)
-            st.plotly_chart(fig_hist, use_container_width=True)
-            
+            # Gráfico de Densidad con Histograma
+            fig_dist = px.histogram(df, x=col_x, marginal="rug", title=f"Distribución de {col_x}",
+                                  color_discrete_sequence=['#636EFA'], opacity=0.7)
+            st.plotly_chart(fig_dist, use_container_width=True)
+        
         with c2:
-            st.write(f"**Análisis de Acumulación (ECDF)**")
-            # El ECDF ayuda a ver qué porcentaje de datos está por debajo de cierto valor
-            fig_ecdf = px.ecdf(df, x=col_x)
-            st.plotly_chart(fig_ecdf, use_container_width=True)
+            # Gráfico de Violín para ver la dispersión
+            fig_viol = px.violin(df, y=col_x, box=True, points="all", title=f"Rango y Outliers de {col_x}")
+            st.plotly_chart(fig_viol, use_container_width=True)
 
-        if col_y != "Ninguna":
-            st.write(f"**Relación entre {col_x} y {col_y}**")
-            try:
-                # Intentamos graficar con línea de tendencia
-                fig_scatter = px.scatter(df, x=col_x, y=col_y, 
-                                       trendline="ols", 
-                                       hover_data=cat_cols[:2],
-                                       opacity=0.6)
-            except ImportError:
-                # Si falla statsmodels, graficamos sin tendencia
-                st.warning("⚠️ Instala 'statsmodels' para ver la línea de tendencia. Mostrando solo puntos.")
-                fig_scatter = px.scatter(df, x=col_x, y=col_y, 
-                                       hover_data=cat_cols[:2],
-                                       opacity=0.6)
-            
-            st.plotly_chart(fig_scatter, use_container_width=True)
-    else:
-        st.info("No hay columnas numéricas para este análisis.")
-
-with tab2:
-    # Mejora visual de la matriz de correlación
-    st.write("### 🔥 Mapa de Calor de Relaciones")
-    if len(numeric_cols) > 1:
-        corr = df[numeric_cols].corr()
-        # Usamos un mapa de calor con escala de colores divergente (RdBu)
-        fig_corr = px.imshow(corr, 
-                            text_auto=".2f", # Muestra solo 2 decimales
-                            color_continuous_scale='RdBu_r', 
-                            zmin=-1, zmax=1) # Forzamos escala de -1 a 1
-        st.plotly_chart(fig_corr, use_container_width=True)
+        if col_y != "Ninguno":
+            st.write(f"**Dispersión: {col_x} vs {col_y}**")
+            # Usamos scatter pero con densidad de color (Density Contour)
+            fig_scat = px.scatter(df, x=col_x, y=col_y, opacity=0.5, 
+                                 trendline="ols" if 'statsmodels' in globals() else None,
+                                 render_mode='webgl') # WebGL es más rápido para muchos datos
+            st.plotly_chart(fig_scat, use_container_width=True)
 
 with tab4:
-    st.subheader("Análisis de Variables Categóricas")
-    
+    st.subheader("🎭 Análisis Cualitativo")
     if cat_cols:
-        cat_to_plot = st.selectbox("Selecciona una categoría para analizar", cat_cols)
+        cat_sel = st.selectbox("Variable Categórica", cat_cols)
         
-        c1, c2 = st.columns([1, 2])
+        col_left, col_right = st.columns(2)
         
-        with c1:
-            # Tabla de frecuencias
-            counts = df[cat_to_plot].value_counts().reset_index()
-            counts.columns = [cat_to_plot, 'conteo']
-            st.write(f"**Frecuencias de {cat_to_plot}**")
-            st.dataframe(counts, use_container_width=True)
+        with col_left:
+            # Gráfico de barras horizontal (más legible)
+            top_n = df[cat_sel].value_counts().nlargest(15).reset_index()
+            fig_bar = px.bar(top_n, x='count', y=cat_sel, orientation='h',
+                            title=f"Top 15 {cat_sel}", color='count',
+                            color_continuous_scale='Blues')
+            fig_bar.update_layout(yaxis={'categoryorder':'total ascending'})
+            st.plotly_chart(fig_bar, use_container_width=True)
             
-        with c2:
-            # Gráfico de Treemap (mejor que un Pie chart para muchas categorías)
-            st.write(f"**Jerarquía / Proporción de {cat_to_plot}**")
-            fig_tree = px.treemap(counts, path=[cat_to_plot], values='conteo', color='conteo',
-                                  color_continuous_scale='Viridis')
-            st.plotly_chart(fig_tree, use_container_width=True)
-
-        st.markdown("---")
-        # Comparativa cualitativa vs cuantitativa
-        if numeric_cols:
-            st.write(f"**Distribución de {numeric_cols[0]} por {cat_to_plot}**")
-            fig_violin = px.violin(df, y=numeric_cols[0], x=cat_to_plot, color=cat_to_plot, box=True, points="all")
-            st.plotly_chart(fig_violin, use_container_width=True)
+        with col_right:
+            # Gráfico Sunburst (Proporciones)
+            fig_sun = px.sunburst(df, path=[cat_sel], title=f"Composición de {cat_sel}")
+            st.plotly_chart(fig_sun, use_container_width=True)
     else:
-        st.info("No hay columnas categóricas.")
+        st.info("No hay variables cualitativas.")
