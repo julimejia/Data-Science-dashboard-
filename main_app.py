@@ -23,7 +23,7 @@ def analizar_con_ia(api_key, context_data, user_question):
         """
         
         completion = client.chat.completions.create(
-            model="llama-3.3-70b-specdec",
+            model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.5,
         )
